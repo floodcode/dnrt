@@ -15,6 +15,7 @@ type DNRTScanner struct {
 	timeout      time.Duration
 	threadsCount int
 	wg           sync.WaitGroup
+	callback     BruteCallback
 }
 
 func NewDNRTScanner() DNRTScanner {
@@ -24,6 +25,7 @@ func NewDNRTScanner() DNRTScanner {
 		ports:        []uint16{80},
 		timeout:      time.Millisecond * 150,
 		threadsCount: 10,
+		callback:     func(BruteResult) {},
 	}
 }
 
@@ -39,6 +41,10 @@ func (s *DNRTScanner) SetPorts(ports []uint16) {
 	s.ports = ports
 }
 
+func (s *DNRTScanner) SetBruteCallback(callback BruteCallback) {
+	s.callback = callback
+}
+
 func (s *DNRTScanner) SetIPsByStringList(list string) {
 	lines := strings.Split(list, "\n")
 	ranges := []IPRange{}
@@ -50,7 +56,6 @@ func (s *DNRTScanner) SetIPsByStringList(list string) {
 
 		rng, rngError := getRangeByString(line)
 		if rngError != nil {
-			fmt.Println("invalid range:", rngError.Error())
 			continue
 		}
 
@@ -94,19 +99,12 @@ func (s *DNRTScanner) processIP() {
 }
 
 func (s *DNRTScanner) processOpenPort(ip net.IP, port uint16) {
-	success := false
-	user := ""
-	pass := ""
+	var bruteforcer Bruteforcer
 
 	switch port {
 	case 22:
-		bruteforcer := NewSSHBruteforcer()
-		success, user, pass = bruteforcer.brute(ip, port)
-	default:
-		fmt.Printf("Unknown service: %s:%d\n", ip.String(), port)
+		bruteforcer = NewBruteforcer(ServiceSSH, s.callback)
 	}
 
-	if success {
-		fmt.Printf("%s:%d - %s:%s\n", ip.String(), port, user, pass)
-	}
+	bruteforcer.brute(ip, port)
 }

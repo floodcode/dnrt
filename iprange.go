@@ -36,7 +36,7 @@ func (r *IPRange) GetAll() (ips []net.IP, err error) {
 		return ips, errors.New("can't get ip list")
 	}
 
-	return ips[1 : len(ips)-1], nil
+	return ips, nil
 }
 
 func getRangeByString(str string) (rng IPRange, err error) {

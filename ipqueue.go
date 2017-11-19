@@ -22,17 +22,17 @@ func NewIPQueue(ranges []IPRange) IPQueue {
 }
 
 func (q *IPQueue) Next() (net.IP, error) {
-	q.ipIndex++
-
-	if len(q.currentIPs) <= q.ipIndex+1 {
+	for len(q.currentIPs) <= q.ipIndex {
 		incremented := q.incrementRange()
+		q.ipIndex = 0
 
 		if !incremented {
 			return nil, errors.New("no more IPs in queue")
 		}
 	}
 
-	return q.currentIPs[q.ipIndex], nil
+	q.ipIndex++
+	return q.currentIPs[q.ipIndex-1], nil
 }
 
 func (q *IPQueue) incrementRange() bool {
