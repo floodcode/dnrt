@@ -40,11 +40,11 @@ func (r *IPRange) GetAll() (ips []net.IP, err error) {
 }
 
 func getRangeByString(str string) (rng IPRange, err error) {
-	if strings.Contains(str, "/") {
-		ip, ipNet, err := net.ParseCIDR(str)
-		return IPRange{ip: ip, ipNet: ipNet}, err
+	if !strings.Contains(str, "/") {
+		str += "/32"
 	}
 
 	ip := net.ParseIP(str)
-	return IPRange{ip: ip, ipNet: nil}, err
+	ip, ipNet, err := net.ParseCIDR(str)
+	return IPRange{ip: ip, ipNet: ipNet}, err
 }
